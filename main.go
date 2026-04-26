@@ -18,6 +18,7 @@ type apiConfig struct {
 	db *database.Queries
 	platform string
 	secret string
+	polka string
 }
 
 var apicfg apiConfig
@@ -38,6 +39,7 @@ func main() {
 	apicfg.db = dbQueries
 	apicfg.platform = os.Getenv("PLATFORM")
 	apicfg.secret = os.Getenv("SECRET_KEY")
+	apicfg.polka = os.Getenv("POLKA_KEY")
 	servermux := http.NewServeMux()
 	servermux.Handle("/app/", http.StripPrefix("/app", apicfg.middlewareMetricsInc(http.FileServer(http.Dir(".")))))
 	server := &http.Server{
@@ -56,6 +58,7 @@ func main() {
 	servermux.HandleFunc("POST /api/revoke", handleRevoke)
 	servermux.HandleFunc("PUT /api/users", handleUpdates)
 	servermux.HandleFunc("DELETE /api/chirps/{chirpID}", handleDelete)
+	servermux.HandleFunc("POST /api/polka/webhooks", handlePolka)
 	err = server.ListenAndServe()
 	fmt.Println(err)
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"sort"
 
 	"github.com/EyuAtske/Chirpy/internal/auth"
 	"github.com/EyuAtske/Chirpy/internal/database"
@@ -35,10 +36,15 @@ type user struct {
 	Created_at time.Time `json:"created_at"`
 	Updated_at time.Time `json:"updated_at"`
 	Email      string    `json:"email"`
+	Is_chirpy_red bool   `json:"is_chirpy_red"`
 }
 
 type loginResponse struct {
-	User         user   `json:"user"`
+	Userid     uuid.UUID `json:"id"`
+	Created_at time.Time `json:"created_at"`
+	Updated_at time.Time `json:"updated_at"`
+	Email      string    `json:"email"`
+	Is_chirpy_red bool   `json:"is_chirpy_red"`
 	Token        string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
 }
@@ -219,36 +225,88 @@ func handleChirps(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetChirps(w http.ResponseWriter, r *http.Request) {
-	chirps, err := apicfg.db.GetChirps(r.Context())
-	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		errorRep := errorResponse{
-			Error: "Something went wrong fetching the chirps",
-		}
-		data, _ := json.Marshal(errorRep)
-		w.Write(data)
-		return
-	}
+	s := r.URL.Query().Get("author_id")
+	so := r.URL.Query().Get(("sort"))
+	var data []byte
 	var resp []response
-	for _, chirp := range chirps {
-		resp = append(resp, response{
-			Id:         chirp.ID,
-			Created_at: chirp.CreatedAt,
-			Updated_at: chirp.UpdatedAt,
-			Body:       chirp.Body,
-			UserId:     chirp.UserID,
-		})
-	}
-	data, err := json.Marshal(resp)
-	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		errorRep := errorResponse{
-			Error: "Something went wrong encoding the response",
+	if s == ""{
+		chirps, err := apicfg.db.GetChirps(r.Context())
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			errorRep := errorResponse{
+				Error: "Something went wrong fetching the chirps",
+			}
+			data, _ := json.Marshal(errorRep)
+			w.Write(data)
+			return
 		}
-		data, _ := json.Marshal(errorRep)
-		w.Write(data)
-		return
+		for _, chirp := range chirps {
+			resp = append(resp, response{
+				Id:         chirp.ID,
+				Created_at: chirp.CreatedAt,
+				Updated_at: chirp.UpdatedAt,
+				Body:       chirp.Body,
+				UserId:     chirp.UserID,
+			})
+		}
+		if so == "desc"{
+			sort.Slice(resp, func(i, j int) bool {return resp[i].Created_at.After(resp[j].Created_at) })
+		}
+		data, err = json.Marshal(resp)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			errorRep := errorResponse{
+				Error: "Something went wrong encoding the response",
+			}
+			data, _ := json.Marshal(errorRep)
+			w.Write(data)
+			return
+		}
+	}else{
+		id, err := uuid.Parse(s)
+		if err != nil{
+			w.WriteHeader(http.StatusNotFound)
+				errorRep := errorResponse{
+					Error: "Something went wrong parsing aurthor id",
+				}
+				data, _ := json.Marshal(errorRep)
+				w.Write(data)
+				return
+		}
+		chirps, err := apicfg.db.GetChirpsByUserId(r.Context(), id)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			errorRep := errorResponse{
+				Error: fmt.Sprintf("Something went wrong fetching the chirps %v", err),
+			}
+			data, _ := json.Marshal(errorRep)
+			w.Write(data)
+			return
+		}
+		for _, chirp := range chirps {
+			resp = append(resp, response{
+				Id:         chirp.ID,
+				Created_at: chirp.CreatedAt,
+				Updated_at: chirp.UpdatedAt,
+				Body:       chirp.Body,
+				UserId:     chirp.UserID,
+			})
+		}
+		if so == "desc"{
+			sort.Slice(resp, func(i, j int) bool {return resp[i].Created_at.After(resp[j].Created_at) })
+		}
+		data, err = json.Marshal(resp)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			errorRep := errorResponse{
+				Error: "Something went wrong encoding the response",
+			}
+			data, _ := json.Marshal(errorRep)
+			w.Write(data)
+			return
+		}
 	}
+	
 	w.Header().Add("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
@@ -334,12 +392,11 @@ func handleLogIn(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := loginResponse{
 		Token: token,
-		User: user{
-			Userid:     usr.ID,
-			Created_at: usr.CreatedAt,
-			Updated_at: usr.UpdatedAt,
-			Email:      usr.Email,
-		},
+		Userid:     usr.ID,
+		Created_at: usr.CreatedAt,
+		Updated_at: usr.UpdatedAt,
+		Email:      usr.Email,
+		Is_chirpy_red: usr.IsChirpyRed,
 		RefreshToken: refToken,
 	}
 	respData, _ := json.Marshal(resp)
@@ -489,6 +546,7 @@ func handleUpdates(w http.ResponseWriter, r *http.Request) {
 		Created_at: usr.CreatedAt,
 		Updated_at: usr.UpdatedAt,
 		Email:      usr.Email,
+		Is_chirpy_red: usr.IsChirpyRed,
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {
@@ -552,6 +610,68 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		errorRep := errorResponse{
 			Error: "Error while deleting chirp",
+		}
+		data, _ := json.Marshal(errorRep)
+		w.Write(data)
+		return
+	}
+	w.Header().Add("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func handlePolka(w http.ResponseWriter, r *http.Request){
+	key, err := auth.GetAPIKey(r.Header)
+	if err != nil{
+		w.WriteHeader(http.StatusUnauthorized)
+		errorRep := errorResponse{
+			Error: fmt.Sprintf("Missing or invalid Authorization header, %v", err),
+		}
+		data, _ := json.Marshal(errorRep)
+		w.Write(data)
+		return
+	}
+	if key != apicfg.polka{
+		w.WriteHeader(http.StatusUnauthorized)
+		errorRep := errorResponse{
+			Error: "UnAuthorized key",
+		}
+		data, _ := json.Marshal(errorRep)
+		w.Write(data)
+		return
+	}
+	type params struct{
+		Event string `json:"event"`
+		Data struct{
+			UserId string `json:"user_id"`
+		} `json:"data"`
+	}
+	var req params
+	decoder := json.NewDecoder(r.Body)
+	err = decoder.Decode(&req)
+	if err != nil{
+		w.WriteHeader(http.StatusBadRequest)
+		errorRep := errorResponse{
+			Error: "Something went wrong parsing the request body",
+		}
+		data, _ := json.Marshal(errorRep)
+		w.Write(data)
+		return
+	}
+	if req.Event != "user.upgraded"{
+		w.WriteHeader(http.StatusNoContent)
+		errorRep := errorResponse{
+			Error: "Event not important",
+		}
+		data, _ := json.Marshal(errorRep)
+		w.Write(data)
+		return
+	}
+	userId, _ := uuid.Parse(req.Data.UserId)
+	_, err = apicfg.db.SetUserChirpyRed(r.Context(), userId)
+	if err != nil{
+		w.WriteHeader(http.StatusNotFound)
+		errorRep := errorResponse{
+			Error: fmt.Sprintf("Error setting chirpy red %v", err),
 		}
 		data, _ := json.Marshal(errorRep)
 		w.Write(data)
