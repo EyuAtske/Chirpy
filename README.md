@@ -63,17 +63,6 @@ go mod init github.com/EyuAtske/Chirpy
 go mod tidy
 ```
 
-### 4. Set up environment variables
-
-Create a `.env` file in the root directory:
-
-```env
-DB_URL=postgres://username:password@localhost:5432/chirpy?sslmode=disable
-SECRET_KEY=your_jwt_secret
-POLKA_KEY=your_polka_key
-PLATFORM=dev
-```
-
 ---
 
 ## 🗄️ Database Setup
